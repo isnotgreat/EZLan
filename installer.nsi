@@ -9,6 +9,8 @@ RequestExecutionLevel admin
 !define MUI_ABORTWARNING
 !define MUI_ICON "ezlan\resources\icon.ico"
 !define MUI_UNICON "ezlan\resources\icon.ico"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\EZLan.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Launch EZLan"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "LICENSE.txt"
@@ -27,6 +29,9 @@ Section "Install"
     # Copy main executable and resources
     File "dist\EZLan.exe"
     File /r "ezlan\resources\*.*"
+    
+    # Copy TAP driver installer
+    File "ezlan\resources\tap-windows.exe"
     
     # Create program shortcuts
     CreateDirectory "$SMPROGRAMS\EZLan"
@@ -48,8 +53,12 @@ Section "Install"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\EZLan" \
                      "DisplayVersion" "1.0.0"
     
-    # Install TAP driver if not already installed
+    # Install TAP driver with wizard
+    MessageBox MB_OK "The TAP driver installation wizard will now start. Please complete the installation."
     ExecWait '"$INSTDIR\tap-windows.exe"'
+    
+    # Give time for driver installation to complete
+    Sleep 10000
 SectionEnd
 
 Section "Uninstall"
@@ -67,4 +76,7 @@ Section "Uninstall"
     
     # Remove registry keys
     DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\EZLan"
+    
+    # Clean up TAP adapters
+    nsExec::ExecToLog 'netsh interface delete "EZLan-TAP"'
 SectionEnd
