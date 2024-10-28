@@ -1,0 +1,55 @@
+2024-10-28 21:24:09,068 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:25:40,084 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:26:26,369 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:26:26,823 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:29:22,550 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:29:22,919 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:29:39,182 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:29:39,550 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:31:29,084 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:31:29,449 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:32:30,655 - TunnelService - INFO - [logger.py:40] - Started hosting on 2.190.140.84:12345
+2024-10-28 21:35:43,000 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:35:43,473 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:35:54,640 - TunnelService - INFO - [logger.py:40] - Started hosting on 2.190.140.84:12345
+2024-10-28 21:36:46,945 - TunnelService - INFO - [logger.py:40] - New connection from ('127.0.0.1', 56580)
+2024-10-28 21:36:46,947 - TunnelService - ERROR - [logger.py:46] - Error handling client connection: 'TunnelService' object has no attribute '_authenticate_client'
+2024-10-28 21:36:46,947 - TunnelService - INFO - [logger.py:40] - New connection from ('127.0.0.1', 56581)
+2024-10-28 21:36:46,948 - TunnelService - ERROR - [logger.py:46] - Error handling client connection: 'TunnelService' object has no attribute '_authenticate_client'
+2024-10-28 21:36:47,192 - TunnelService - INFO - [logger.py:40] - New connection from ('127.0.0.1', 56582)
+2024-10-28 21:36:47,192 - TunnelService - ERROR - [logger.py:46] - Error handling client connection: 'TunnelService' object has no attribute '_authenticate_client'
+2024-10-28 21:36:48,300 - TunnelService - INFO - [logger.py:40] - New connection from ('127.0.0.1', 56587)
+2024-10-28 21:36:48,301 - TunnelService - ERROR - [logger.py:46] - Error handling client connection: 'TunnelService' object has no attribute '_authenticate_client'
+2024-10-28 21:36:48,301 - TunnelService - INFO - [logger.py:40] - New connection from ('127.0.0.1', 56588)
+2024-10-28 21:36:48,302 - TunnelService - ERROR - [logger.py:46] - Error handling client connection: 'TunnelService' object has no attribute '_authenticate_client'
+2024-10-28 21:36:48,560 - TunnelService - INFO - [logger.py:40] - New connection from ('127.0.0.1', 56589)
+2024-10-28 21:36:48,561 - TunnelService - ERROR - [logger.py:46] - Error handling client connection: 'TunnelService' object has no attribute '_authenticate_client'
+2024-10-28 21:37:54,132 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:37:54,560 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:38:05,916 - TunnelService - INFO - [logger.py:40] - Started hosting on 2.190.140.84:12345
+2024-10-28 21:42:16,588 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:42:17,022 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:42:32,486 - TunnelService - INFO - [logger.py:40] - Started hosting on 2.190.140.84:12345
+2024-10-28 21:43:54,267 - TunnelService - INFO - [logger.py:40] - Stopped hosting network
+2024-10-28 21:43:54,267 - TunnelService - ERROR - [logger.py:46] - Accept error: [WinError 10038] An operation was attempted on something that is not a socket
+2024-10-28 21:44:23,240 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:44:23,696 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:44:31,386 - TunnelService - INFO - [logger.py:40] - Started hosting on 2.190.140.84:12345
+2024-10-28 21:44:39,129 - TunnelService - INFO - [logger.py:40] - Stopped hosting network
+2024-10-28 21:44:39,129 - TunnelService - ERROR - [logger.py:46] - Accept error: [WinError 10038] An operation was attempted on something that is not a socket
+2024-10-28 21:47:15,583 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:47:15,957 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:47:25,390 - TunnelService - INFO - [logger.py:40] - Started hosting on 2.190.140.84:12345
+2024-10-28 21:47:34,267 - TunnelService - INFO - [logger.py:40] - Stopped hosting network
+2024-10-28 21:49:55,545 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:49:55,936 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:51:34,212 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:51:34,626 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:52:56,098 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:52:56,475 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:54:07,983 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:54:08,379 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:55:28,931 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 21:55:29,294 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 22:06:30,714 - TunnelService - INFO - [logger.py:40] - Network analytics service started
+2024-10-28 22:06:31,133 - TunnelService - INFO - [logger.py:40] - Network analytics service started

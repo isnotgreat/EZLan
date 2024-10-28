@@ -1,0 +1,21 @@
+2024-10-28 22:30:30,847 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 22:30:31,288 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 22:31:20,822 - TunnelService - INFO - [logger.py:31] - Started hosting on 2.190.140.84:12345
+2024-10-28 22:32:07,782 - TunnelService - INFO - [logger.py:31] - Stopped hosting network
+2024-10-28 22:36:37,534 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 22:36:37,912 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 22:36:48,346 - TunnelService - INFO - [logger.py:31] - Started hosting on 2.190.140.84:12345
+2024-10-28 22:38:44,980 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 22:38:45,438 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 22:38:56,599 - TunnelService - INFO - [logger.py:31] - Started hosting on 2.190.140.84:12345
+2024-10-28 22:41:08,527 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 22:41:08,907 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 22:43:04,983 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 22:43:05,386 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 22:43:09,434 - TunnelService - ERROR - [logger.py:34] - Failed to start hosting: tapctl not found. Please ensure TAP driver is properly installed.
+2024-10-28 23:12:32,188 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 23:12:32,609 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 23:12:43,903 - TunnelService - ERROR - [logger.py:34] - Failed to start hosting: TAP driver installation failed - tapctl not found
+2024-10-28 23:16:34,044 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 23:16:34,492 - TunnelService - INFO - [logger.py:31] - Network analytics service started
+2024-10-28 23:16:42,608 - TunnelService - ERROR - [logger.py:34] - Failed to start hosting: tapctl not found. Please ensure TAP driver is properly installed.

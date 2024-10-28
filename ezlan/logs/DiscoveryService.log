@@ -1,0 +1,56 @@
+2024-10-28 21:10:29,370 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:11:29,919 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:12:06,811 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:12:06,905 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:12:06,905 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:21:50,347 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:23:43,606 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:24:09,066 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:24:44,476 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:25:10,727 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:25:40,046 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:26:26,289 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:26:26,900 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:26:26,900 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:29:22,499 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:29:22,996 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:29:22,996 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:29:39,051 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:29:39,646 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:29:39,646 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:31:29,047 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:31:29,521 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:31:29,521 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:35:42,935 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:35:43,555 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:35:43,555 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:37:54,074 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:37:54,636 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:37:54,636 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:42:16,544 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:42:17,098 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:42:17,098 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:44:23,208 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:44:23,777 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:44:23,777 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:47:15,547 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:47:16,035 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:47:16,035 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:49:55,496 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:49:56,027 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:49:56,027 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:51:34,092 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:51:34,707 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:51:34,707 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:52:56,043 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:52:56,565 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:52:56,565 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:54:07,934 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:54:08,457 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:54:08,457 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 21:55:28,875 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 21:55:29,396 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 21:55:29,396 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
+2024-10-28 22:06:30,651 - DiscoveryService - INFO - [logger.py:40] - Discovery socket setup complete
+2024-10-28 22:06:31,226 - DiscoveryService - INFO - [logger.py:40] - Discovered peer: DESKTOP-U6AK4OJ
+2024-10-28 22:06:31,226 - DiscoveryService - INFO - [logger.py:40] - Discovery service started
