@@ -1,71 +1,103 @@
-import subprocess
-import socket
-import win32com.client
-import pythoncom
 import logging
+import socket
+import subprocess
 import sys
+from ezlan.network.upnp import UPnPClient
+from ezlan.utils.logger import Logger
 
 class NetworkConfigurator:
     def __init__(self):
-        self.logger = logging.getLogger("NetworkConfigurator")
+        self.logger = Logger("NetworkConfigurator")
         self.upnp = None
-        self.executable_path = sys.executable if getattr(sys, 'frozen', False) else sys.argv[0]
         
     def setup(self, port):
-        """Setup both port forwarding and firewall rules"""
-        success_port = self.setup_port_forwarding(port)
-        success_firewall = self.setup_firewall_rules()
-        return success_port and success_firewall
-
-    def setup_port_forwarding(self, port):
+        """Setup network configuration"""
         try:
-            pythoncom.CoInitialize()
-            self.upnp = win32com.client.Dispatch('HNetCfg.NATUPnP')
+            # Setup firewall rules
+            success_firewall = self.setup_firewall_rules()
             
-            # Check if we got a valid UPnP object
-            if not self.upnp or not hasattr(self.upnp, 'StaticPortMappingCollection'):
-                self.logger.warning("UPnP not available on this network")
-                return True  # Continue without UPnP
+            # Try UPnP if available, but don't fail if it doesn't work
+            try:
+                success_upnp = self.setup_port_forwarding(port)
+                if not success_upnp:
+                    self.logger.warning("UPnP setup failed - continuing without port forwarding")
+            except Exception as e:
+                self.logger.warning(f"UPnP not available: {e} - continuing without port forwarding")
+                success_upnp = True  # Don't fail the overall setup
                 
-            mapping_collection = self.upnp.StaticPortMappingCollection
-            if mapping_collection is None:
-                self.logger.warning("UPnP port mapping not supported by router")
-                return True  # Continue without UPnP
-                
-            mapping_collection.Add(
-                port, "TCP", port,
-                socket.gethostbyname(socket.gethostname()),
-                True, "EZLan"
-            )
-            return True
+            return success_firewall
+            
         except Exception as e:
-            self.logger.error(f"Failed to setup port forwarding: {e}")
-            return True  # Continue even if port forwarding fails
+            self.logger.error(f"Network configuration failed: {e}")
+            return False
 
     def setup_firewall_rules(self):
+        """Setup Windows Firewall rules"""
         try:
-            # Add inbound rule
+            app_path = sys.executable
+            
+            # Add inbound rule for the port
             subprocess.run([
                 'netsh', 'advfirewall', 'firewall', 'add', 'rule',
-                'name="EZLan"',
+                'name="EZLan_TCP"',
                 'dir=in',
                 'action=allow',
-                f'program="{self.executable_path}"',
+                'protocol=TCP',
                 'enable=yes'
-            ], check=True, capture_output=True)
-
-            # Add outbound rule
+            ], check=True)
+            
+            # Add outbound rule for the port
             subprocess.run([
                 'netsh', 'advfirewall', 'firewall', 'add', 'rule',
-                'name="EZLan"',
+                'name="EZLan_TCP"',
                 'dir=out',
                 'action=allow',
-                f'program="{self.executable_path}"',
+                'protocol=TCP',
                 'enable=yes'
-            ], check=True, capture_output=True)
+            ], check=True)
             
-            self.logger.info("Firewall rules added successfully")
             return True
+            
         except Exception as e:
             self.logger.error(f"Failed to setup firewall rules: {e}")
             return False
+
+    def setup_port_forwarding(self, port):
+        """Setup port forwarding using UPnP"""
+        try:
+            # Only try UPnP if we haven't already failed
+            if self.upnp is None:
+                self.upnp = UPnPClient()
+                
+            if self.upnp and self.upnp.add_port_mapping(port):
+                self.logger.info(f"Successfully set up port forwarding for port {port}")
+                return True
+                
+            return False
+            
+        except Exception as e:
+            self.logger.warning(f"Port forwarding setup failed: {e}")
+            return False
+
+    def remove_port_forwarding(self, port):
+        """Remove port forwarding"""
+        try:
+            if self.upnp:
+                self.upnp.remove_port_mapping(port)
+                self.logger.info(f"Removed port forwarding for port {port}")
+        except Exception as e:
+            self.logger.warning(f"Failed to remove port forwarding: {e}")
+
+    def cleanup(self):
+        """Cleanup network configuration"""
+        try:
+            # Remove firewall rules
+            subprocess.run([
+                'netsh', 'advfirewall', 'firewall', 'delete', 'rule',
+                'name="EZLan_TCP"'
+            ], check=False)
+            
+            self.logger.info("Network configuration cleaned up")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to cleanup network configuration: {e}")

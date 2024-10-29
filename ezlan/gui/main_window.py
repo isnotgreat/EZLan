@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                            QPushButton, QLineEdit, QLabel, QHBoxLayout,
                            QSplitter, QMessageBox)
 from PyQt6.QtCore import Qt
+import qasync
 from .components.user_list import UserList
 from .components.connection_dialog import ConnectionDialog
 from .components.connection_status import ConnectionStatusWidget
@@ -112,8 +113,12 @@ class MainWindow(QMainWindow):
         # Add host status panel connections
         self.host_status.stop_btn.clicked.connect(self._stop_hosting)
         
-        # Add host button connection
-        self.host_btn.clicked.connect(self._show_host_dialog)
+        # Add host button connection using qasync
+        @qasync.asyncSlot(bool)
+        async def host_clicked(checked=False):
+            await self._show_host_dialog()
+        
+        self.host_btn.clicked.connect(host_clicked)
         
         # Update existing connections
         self.connect_btn.clicked.connect(self._show_connection_dialog)
@@ -125,15 +130,25 @@ class MainWindow(QMainWindow):
         self.tunnel_service.connection_closed.connect(self._handle_connection_closed)
         self.tunnel_service.host_started.connect(self._handle_host_started)
     
-    def _show_host_dialog(self):
+    @qasync.asyncSlot()
+    async def _show_host_dialog(self):
+        """Show host dialog and start hosting if accepted"""
         dialog = HostDialog(self)
         if dialog.exec():
             host_info = dialog.get_host_info()
-            self.tunnel_service.start_hosting(
-                host_info['name'],
-                host_info['password'],
-                host_info.get('port', 12345)
-            )
+            try:
+                await self.tunnel_service.start_hosting(
+                    host_info['name'],
+                    host_info['password'],
+                    host_info.get('port', 12345)
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to start hosting: {e}")
+                QMessageBox.critical(
+                    self,
+                    "Hosting Error",
+                    f"Failed to start hosting: {str(e)}"
+                )
 
     def _show_connection_dialog(self):
         dialog = ConnectionDialog(self, self.tunnel_service)
@@ -158,6 +173,17 @@ class MainWindow(QMainWindow):
     
     def _handle_connection_failed(self, error):
         self.logger.error(f"Connection failed: {error}")
+        QMessageBox.critical(
+            self,
+            "Connection Failed",
+            f"Failed to connect: {error}\n\n"
+            "Please ensure:\n"
+            "- The host IP and port are correct\n"
+            "- The host's network allows incoming connections\n"
+            "- The password is correct"
+        )
+        self.connect_btn.setEnabled(True)
+        self.disconnect_btn.setEnabled(False)
 
     def _handle_host_started(self, host_info):
         self.host_status.update_host_info(host_info)
@@ -174,10 +200,16 @@ class MainWindow(QMainWindow):
         self.host_btn.setEnabled(True)
 
     def _handle_connection_closed(self, peer_name):
+        self.logger.info(f"Connection closed with {peer_name}")
+        self.connection_monitor.stop_monitoring()
+        self.optimization_feedback.clear_user()
         self.connect_btn.setEnabled(True)
         self.disconnect_btn.setEnabled(False)
-        self.optimization_feedback.set_user("")
-        self.logger.info(f"Connection closed with {peer_name}")
+        QMessageBox.information(
+            self,
+            "Connection Closed",
+            f"Connection with {peer_name} has been closed."
+        )
 
     def _handle_disconnect(self):
         """Handle disconnect button click"""

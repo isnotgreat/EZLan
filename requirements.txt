@@ -3,7 +3,7 @@ uvicorn[standard]>=0.24.0
 pydantic>=2.5.2
 PyQt6>=6.4.0
 python-dotenv>=0.19.0
-requests>=2.26.0
+requests>=2.31.0
 cryptography>=36.0.0
 pywin32>=308; platform_system=="Windows"
 netifaces>=0.11.0
@@ -15,6 +15,15 @@ typing-extensions>=4.8.0
 starlette>=0.27.0
 setuptools>=45.0
 wheel>=0.37.0
+# Optional dependencies
+# miniupnpc>=2.2.8  # Optional: For UPnP support
+natpmp
+aioice
+websockets>=10.0
+aioice>=0.7.6
+natpmp>=1.0.0
+qasync>=0.24.0
+pyinstaller>=5.13.0
 
 
 

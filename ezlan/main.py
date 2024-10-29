@@ -1,6 +1,8 @@
 import sys
 import ctypes
 import traceback
+import asyncio
+import qasync
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from ezlan.gui.main_window import MainWindow
 from ezlan.network.discovery import DiscoveryService
@@ -28,6 +30,42 @@ def elevate():
         input("Press Enter to exit...")
         return False
 
+async def async_main(app):
+    logger = Logger("Main")
+    
+    # Check and setup system requirements
+    try:
+        installer = SystemInstaller()
+        installer.check_and_setup()
+    except Exception as e:
+        QMessageBox.critical(None, "Setup Error", 
+            f"Failed to setup required components: {str(e)}\n"
+            "Please run the application as administrator and ensure you have internet connectivity.")
+        return 1
+    
+    try:
+        # Initialize network services
+        discovery_service = DiscoveryService()
+        tunnel_service = TunnelService()
+        
+        # Create and show main window
+        window = MainWindow(discovery_service, tunnel_service)
+        window.show()
+        
+        try:
+            # Start discovery service after window is shown
+            discovery_service.start_discovery()
+        except Exception as e:
+            logger.warning(f"Discovery service failed to start: {e}")
+            
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Application startup failed: {e}")
+        QMessageBox.critical(None, "Startup Error", 
+            f"Failed to start application: {str(e)}")
+        return 1
+
 def main():
     try:
         if not is_admin():
@@ -35,42 +73,22 @@ def main():
                 return 1
             return 0
 
+        # Create the application first
         app = QApplication(sys.argv)
-        logger = Logger("Main")
         
-        # Check and setup system requirements
-        try:
-            installer = SystemInstaller()
-            installer.check_and_setup()
-        except Exception as e:
-            QMessageBox.critical(None, "Setup Error", 
-                f"Failed to setup required components: {str(e)}\n"
-                "Please run the application as administrator and ensure you have internet connectivity.")
-            return 1
+        # Create event loop after QApplication
+        loop = qasync.QEventLoop(app)
+        asyncio.set_event_loop(loop)
         
-        try:
-            # Initialize network services
-            discovery_service = DiscoveryService()
-            tunnel_service = TunnelService()
+        # Run the async main
+        exit_code = loop.run_until_complete(async_main(app))
+        
+        if exit_code == 0:
+            # Start the event loop
+            sys.exit(app.exec())
+        else:
+            sys.exit(exit_code)
             
-            # Create and show main window
-            window = MainWindow(discovery_service, tunnel_service)
-            window.show()
-            
-            try:
-                # Start discovery service after window is shown
-                discovery_service.start_discovery()
-            except Exception as e:
-                logger.warning(f"Discovery service failed to start: {e}")
-                # Continue running without discovery service
-                
-            return app.exec()
-        except Exception as e:
-            logger.error(f"Application startup failed: {e}")
-            QMessageBox.critical(None, "Startup Error", 
-                f"Failed to start application: {str(e)}")
-            return 1
-
     except Exception as e:
         print(f"Fatal error: {e}")
         print("\nStack trace:")

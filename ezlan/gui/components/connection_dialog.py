@@ -1,13 +1,61 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, 
                            QPushButton, QLineEdit, QLabel, QTabWidget, 
-                           QListWidget, QWidget, QListWidgetItem)
+                           QListWidget, QWidget, QListWidgetItem, QMessageBox, QComboBox)
 from ezlan.network.tunnel import TunnelService
+from ezlan.utils.host_storage import HostStorage
 from PyQt6.QtCore import Qt
+import qasync
 
 class ConnectionDialog(QDialog):
-    def __init__(self, parent, tunnel_service: TunnelService):
+    def __init__(self, parent, tunnel_service):
         super().__init__(parent)
         self.tunnel_service = tunnel_service
+        self.host_storage = HostStorage()
+        self.connection_in_progress = False
+        self.setup_ui()
+        
+    @qasync.asyncSlot()
+    async def accept(self):
+        if self.connection_in_progress:
+            return
+            
+        self.connection_in_progress = True
+        self.connect_btn.setEnabled(False)
+        self.connect_btn.setText("Connecting...")
+        
+        try:
+            conn_info = self.get_connection_info()
+            if conn_info['type'] == 'direct':
+                success = await self.tunnel_service.connect_to_host(
+                    conn_info['ip'],
+                    conn_info['port'],
+                    conn_info['password']
+                )
+                if success:
+                    super().accept()
+                else:
+                    QMessageBox.critical(
+                        self,
+                        "Connection Failed",
+                        "Failed to establish connection. Please check the IP, port and password."
+                    )
+            else:
+                # Handle local peer connection
+                self.tunnel_service.connect_to_peer(conn_info['peer'])
+                super().accept()
+                
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Connection Error",
+                f"Connection failed: {str(e)}"
+            )
+        finally:
+            self.connection_in_progress = False
+            self.connect_btn.setEnabled(True)
+            self.connect_btn.setText("Connect")
+    
+    def setup_ui(self):
         self.setWindowTitle("Connect to Network")
         self.setModal(True)
         self.setMinimumWidth(400)
@@ -30,18 +78,33 @@ class ConnectionDialog(QDialog):
         remote_tab = QWidget()
         remote_layout = QVBoxLayout(remote_tab)
         
-        remote_layout.addWidget(QLabel("Host IP:"))
-        self.ip_edit = QLineEdit()
-        remote_layout.addWidget(self.ip_edit)
+        # Host selection combo box
+        self.host_combo = QComboBox()
+        self.host_combo.setEditable(True)
+        self.host_combo.currentTextChanged.connect(self._on_host_selected)
+        self._populate_hosts()
         
+        # Input fields
+        self.ip_input = QLineEdit()
+        self.port_input = QLineEdit()
+        self.port_input.setText("12345")
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        
+        # Remove host button
+        remove_btn = QPushButton("Remove Host")
+        remove_btn.clicked.connect(self._remove_current_host)
+        
+        # Add all widgets to layout
+        remote_layout.addWidget(QLabel("Saved Hosts:"))
+        remote_layout.addWidget(self.host_combo)
+        remote_layout.addWidget(remove_btn)
+        remote_layout.addWidget(QLabel("IP:"))
+        remote_layout.addWidget(self.ip_input)
         remote_layout.addWidget(QLabel("Port:"))
-        self.port_edit = QLineEdit("12345")
-        remote_layout.addWidget(self.port_edit)
-        
+        remote_layout.addWidget(self.port_input)
         remote_layout.addWidget(QLabel("Password:"))
-        self.password_edit = QLineEdit()
-        self.password_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        remote_layout.addWidget(self.password_edit)
+        remote_layout.addWidget(self.password_input)
         
         self.tabs.addTab(remote_tab, "Remote Host")
         
@@ -68,20 +131,41 @@ class ConnectionDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, peer)
             self.peer_list.addItem(item)
     
+    def _populate_hosts(self):
+        self.host_combo.clear()
+        self.host_combo.addItem("")  # Empty option
+        for host_key, host_info in self.host_storage.get_hosts().items():
+            self.host_combo.addItem(host_key)
+
+    def _on_host_selected(self, host_key):
+        if host_key in self.host_storage.get_hosts():
+            host = self.host_storage.get_hosts()[host_key]
+            self.ip_input.setText(host['ip'])
+            self.port_input.setText(str(host['port']))
+            self.password_input.setText(host['password'])
+
+    def _remove_current_host(self):
+        host_key = self.host_combo.currentText()
+        if host_key in self.host_storage.get_hosts():
+            self.host_storage.remove_host(
+                self.host_storage.get_hosts()[host_key]['ip'],
+                self.host_storage.get_hosts()[host_key]['port']
+            )
+            self._populate_hosts()
+
     def get_connection_info(self):
-        """Get the connection information based on selected tab"""
-        if self.tabs.currentIndex() == 0:  # Local peers
-            selected_items = self.peer_list.selectedItems()
-            if not selected_items:
-                return None
-            return {
-                'type': 'local',
-                'peer': selected_items[0].data(Qt.ItemDataRole.UserRole)
-            }
-        else:  # Remote host
-            return {
-                'type': 'remote',
-                'ip': self.ip_edit.text(),
-                'port': int(self.port_edit.text()),
-                'password': self.password_edit.text()
-            }
+        ip = self.ip_input.text().strip()
+        try:
+            port = int(self.port_input.text())
+        except ValueError:
+            port = 12345
+            
+        # Save host info
+        self.host_storage.add_host(ip, port, self.password_input.text())
+        
+        return {
+            'type': 'direct',
+            'ip': ip,
+            'port': port,
+            'password': self.password_input.text()
+        }

@@ -26,6 +26,9 @@ import sys
 from pathlib import Path
 from ezlan.utils.installer import SystemInstaller
 from ezlan.network.network_config import NetworkConfigurator
+from ezlan.network.signaling import SignalingService
+import qasync
+import json
 
 class TunnelService(QObject):
     connection_established = pyqtSignal(dict)  # Emits peer info when connected
@@ -71,7 +74,10 @@ class TunnelService(QObject):
         # Initialize network analytics
         self.network_analytics.start()
         self.logger.info("Network analytics service started")
-
+        
+        # Add to existing init
+        self.signaling = SignalingService()
+        
     def _get_interface_manager(self):
         system = platform.system().lower()
         if system == 'windows':
@@ -118,22 +124,33 @@ class TunnelService(QObject):
                 continue
 
     def _handle_client_connection(self, client_socket, client_address):
-        """Handle new client connection including authentication"""
+        """Handle new client connection"""
         try:
-            # Authenticate client
-            if not self._authenticate_client(client_socket):
+            if not self._authenticate_client(client_socket, client_address):
                 client_socket.close()
                 return
                 
-            # Assign virtual IP
-            client_ip = self._get_next_ip()
+            # Start tunnel for authenticated client
+            local_ip = self._allocate_ip()
+            self.interface_manager.setup_interface(local_ip)
+            self._start_tunnel(client_socket, local_ip)
             
-            # Setup tunnel
-            self._setup_client_tunnel(client_socket, client_ip, client_address)
+            # Add to active tunnels
+            self.active_tunnels[client_address[0]] = {
+                'socket': client_socket,
+                'ip': local_ip,
+                'status': 'connected'
+            }
+            
+            self.connection_established.emit({
+                'name': client_address[0],
+                'ip': client_address[0]
+            })
             
         except Exception as e:
             self.logger.error(f"Error handling client connection: {e}")
-            client_socket.close()
+            if not client_socket._closed:
+                client_socket.close()
 
     def _setup_secure_channel(self, socket):
         try:
@@ -238,99 +255,87 @@ class TunnelService(QObject):
             self.traffic_shaper.update_policy(user_name, policy)
             self.logger.info(f"Updated QoS policy for {user_name}: {vars(policy)}")
 
-    def start_hosting(self, name=None, password=None, port=None):
+    async def start_hosting(self, name: str, password: str, port: int = None):
         """Start hosting a network"""
         try:
+            if port is None:
+                port = self.tunnel_port
+                
             # Initialize network configurator
             self.network_config = NetworkConfigurator()
             
             # Setup port forwarding and firewall rules
-            if not self.network_config.setup(self.tunnel_port):
-                raise RuntimeError("Failed to setup network configuration. Please run as administrator.")
-            
-            # Continue with existing hosting setup...
-            installer = SystemInstaller()
-            installer.check_and_setup()
-            
-            if port:
-                self.tunnel_port = port
+            if not self.network_config.setup(port):
+                self.logger.warning("Network configuration partially failed")
                 
-            # Create and configure TAP interface first
-            try:
-                interface_name = self.interface_manager.create_interface()
-            except RuntimeError as e:
-                if "restart" in str(e).lower():
-                    raise RuntimeError(
-                        "TAP driver installation requires a system restart. "
-                        "Please save your work, restart your computer, and try again."
-                    )
-                raise
-            
-            host_ip = '10.8.0.1'  # Host always gets first IP
-            self.interface_manager.configure_interface(host_ip)
-            
-            # Start the server
+            # Start server
+            self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.server_socket.bind(('0.0.0.0', port))
+            self.server_socket.listen(5)
             self.is_hosting = True
-            self.start_server()
             
-            # Get public IP using NAT traversal
+            # Start accepting connections
+            threading.Thread(target=self._accept_connections, daemon=True).start()
+            
+            # Get public IP
             public_ip = self.nat_traversal.get_public_ip()
             
             self.host_info = {
                 'name': name,
                 'password': password,
-                'ip': host_ip,
-                'public_ip': public_ip,  # Add public IP to host info
-                'port': self.tunnel_port,
-                'interface': interface_name
+                'public_ip': public_ip,
+                'port': port
             }
             
-            self.logger.info(
-                f"Started hosting on {self.host_info['ip']}:{self.host_info['port']}\n"
-                f"Note: TAP adapter will show as 'disconnected' until peers connect."
-            )
             self.host_started.emit(self.host_info)
+            self.logger.info(f"Started hosting on {public_ip}:{port}")
             
         except Exception as e:
-            self.is_hosting = False
             self.logger.error(f"Failed to start hosting: {e}")
             raise
-    
-    def connect_to_host(self, host_ip: str, port: int, password: str):
-        """Connect to a hosted LAN network"""
+
+    @qasync.asyncSlot(str, int, str)
+    async def connect_to_host(self, host_ip: str, port: int, password: str) -> bool:
+        """Connect to a hosted network"""
         try:
-            # Check if we're trying to connect to our own hosted network
-            if self.is_hosting:
-                raise RuntimeError(
-                    "Cannot connect to your own hosted network. "
-                    "Wait for others to connect to you instead."
-                )
-                
-            # Check if the IP is our own public IP
-            if host_ip == self.public_ip:
-                raise RuntimeError(
-                    "Cannot connect to your own IP address. "
-                    "Share your public IP and port with others to let them connect."
-                )
-                
-            # Connect to host
-            self.logger.info(f"Attempting to connect to host at {host_ip}:{port}")
+            self.logger.info(f"Attempting to connect to {host_ip}:{port}")
+            
+            # Create connection
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(10)
             sock.connect((host_ip, port))
             
-            # Authenticate
-            self._authenticate(sock, password)
+            # Wait for auth request
+            auth_request = json.loads(sock.recv(1024).decode())
+            if auth_request.get('type') != 'auth_request':
+                raise RuntimeError("Invalid server response")
+                
+            # Send authentication
+            sock.send(json.dumps({
+                'password': password
+            }).encode())
             
-            # Setup virtual interface and routing
-            local_ip = self._get_next_ip()
+            # Get response
+            response = json.loads(sock.recv(1024).decode())
+            if response.get('status') != 'success':
+                raise RuntimeError("Authentication failed")
+                
+            # Setup interface and tunnel
+            local_ip = response.get('ip')
             self.interface_manager.setup_interface(local_ip)
-            
-            # Start tunnel
             self._start_tunnel(sock, local_ip)
             
+            self.connection_established.emit({
+                'name': host_ip,
+                'ip': host_ip
+            })
+            return True
+            
         except Exception as e:
-            self.logger.error(f"Failed to connect to host: {e}")
-            self.connection_failed.emit(str(e))
+            error_msg = str(e)
+            self.logger.error(f"Connection failed: {error_msg}")
+            self.connection_failed.emit(error_msg)
+            return False
 
     def setup_services(self):
         """Initialize required services"""
@@ -403,18 +408,44 @@ class TunnelService(QObject):
             self.logger.error(f"Error during cleanup: {e}")
 
     def stop_hosting(self):
-        """Stop hosting the network"""
-        if self.is_hosting:
-            try:
-                # Remove port forwarding and firewall rules
-                if hasattr(self, 'network_config'):
+        """Stop hosting and cleanup"""
+        try:
+            self.is_hosting = False  # Set this first to stop accept loop
+            
+            # Close server socket if it exists and is open
+            if hasattr(self, 'server_socket') and not self.server_socket._closed:
+                try:
+                    self.server_socket.shutdown(socket.SHUT_RDWR)
+                    self.server_socket.close()
+                except Exception as e:
+                    self.logger.debug(f"Error closing server socket: {e}")
+            
+            # Disconnect all clients
+            for peer_name in list(self.active_tunnels.keys()):
+                try:
+                    self.disconnect_from_peer(peer_name)
+                except Exception as e:
+                    self.logger.debug(f"Error disconnecting peer {peer_name}: {e}")
+            
+            # Remove port forwarding
+            if hasattr(self, 'network_config'):
+                try:
                     self.network_config.remove_port_forwarding(self.tunnel_port)
-                    self.network_config.remove_firewall_rules()
-                
-                # Rest of your existing stop_hosting code...
-                
-            except Exception as e:
-                self.logger.error(f"Error stopping host: {e}")
+                except Exception as e:
+                    self.logger.debug(f"Error removing port forwarding: {e}")
+            
+            # Reset host info
+            self.host_info = None
+            
+            self.logger.info("Stopped hosting")
+            
+        except Exception as e:
+            self.logger.error(f"Error stopping host: {e}")
+        finally:
+            # Ensure these are always reset
+            self.is_hosting = False
+            if hasattr(self, 'server_socket'):
+                delattr(self, 'server_socket')
 
     def _start_tunnel(self, sock, local_ip):
         """Start the network tunnel"""
@@ -452,6 +483,43 @@ class TunnelService(QObject):
                 ], check=True)
         except Exception as e:
             self.logger.error(f"Failed to configure routes: {e}")
+
+    def _authenticate_client(self, client_socket, client_address):
+        """Authenticate incoming client connection"""
+        try:
+            # Set timeout for authentication
+            client_socket.settimeout(10)
+            
+            # Send auth request
+            client_socket.send(json.dumps({
+                'type': 'auth_request'
+            }).encode())
+            
+            # Receive authentication data
+            auth_data = client_socket.recv(1024).decode()
+            try:
+                auth_info = json.loads(auth_data)
+                password = auth_info.get('password')
+            except json.JSONDecodeError:
+                self.logger.error(f"Invalid authentication data from {client_address}")
+                return False
+                
+            # Verify password
+            if not password or password != self.host_info['password']:
+                self.logger.error(f"Authentication failed for {client_address}")
+                return False
+                
+            # Send success response
+            client_socket.send(json.dumps({
+                'status': 'success',
+                'ip': self._allocate_ip()
+            }).encode())
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Authentication error: {e}")
+            return False
 
 
 

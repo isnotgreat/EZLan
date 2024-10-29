@@ -6,7 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('ezlan/resources', 'resources')],
-    hiddenimports=['PyQt6', 'cryptography', 'netifaces'],
+    hiddenimports=['PyQt6', 'cryptography', 'netifaces', 'ping3', 'scapy', 'pyqtgraph', 'numpy'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -36,4 +36,5 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     uac_admin=True,
+    icon=['ezlan\\resources\\icon.ico'],
 )

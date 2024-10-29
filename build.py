@@ -44,6 +44,7 @@ def build_executable():
         '--name=EZLan',
         '--onefile',
         '--windowed',
+        '--icon=ezlan/resources/icon.ico',
         '--add-data=ezlan/resources;resources',
         '--hidden-import=PyQt6',
         '--hidden-import=cryptography',
