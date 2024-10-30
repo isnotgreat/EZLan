@@ -28,7 +28,7 @@ A powerful, user-friendly application that creates virtual LAN connections over 
 1. **Clone the repository:**
 
     ```bash
-    git clone https://github.com/yourusername/EZLan.git
+    git clone https://github.com/isnotgreat/EZLan.git
     cd EZLan
     ```
 
