@@ -2,7 +2,7 @@
 
 A powerful, user-friendly application that creates virtual LAN connections over the internet, perfect for gaming and local network applications that require LAN connectivity.
 
-**This application is made using [Cursor](https://www.cursor.dev/).**
+**This application is made using [Cursor](https://www.cursor.com/).**
 
 ## Features
 
