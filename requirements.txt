@@ -24,6 +24,7 @@ aioice>=0.7.6
 natpmp>=1.0.0
 qasync>=0.24.0
 pyinstaller>=5.13.0
+aiohttp
 
 
 

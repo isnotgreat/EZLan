@@ -1,91 +1,146 @@
-from sklearn.ensemble import RandomForestRegressor
-import numpy as np
-from dataclasses import dataclass
-from typing import Dict, List
 from PyQt6.QtCore import QObject, pyqtSignal
-
-@dataclass
-class OptimizationSuggestion:
-    parameter: str
-    current_value: float
-    suggested_value: float
-    confidence: float
-    impact: str
+import threading
+import time
+import numpy as np
+from ezlan.utils.logger import Logger
 
 class PredictiveOptimizer(QObject):
-    optimization_suggested = pyqtSignal(str, OptimizationSuggestion)
+    prediction_made = pyqtSignal(str, str)  # user, prediction_description
     
     def __init__(self, tunnel_service):
         super().__init__()
+        self.logger = Logger("PredictiveOptimizer")
         self.tunnel_service = tunnel_service
-        self.models = {}
-        self.training_data = {}
-        self.min_samples = 30
+        self.running = False
+        self.connections = {}
+        self._lock = threading.Lock()
+        self.update_interval = 10.0  # 10 second update interval
+        self.history_length = 60  # Keep 60 data points
+        
+    def start(self):
+        """Start predictive optimization"""
+        try:
+            self.running = True
+            self.optimizer_thread = threading.Thread(target=self._optimizer_loop, daemon=True)
+            self.optimizer_thread.start()
+            self.logger.info("Predictive optimization started")
+        except Exception as e:
+            self.logger.error(f"Failed to start predictive optimization: {e}")
+            raise
+            
+    def stop(self):
+        """Stop predictive optimization"""
+        self.running = False
+        if hasattr(self, 'optimizer_thread'):
+            self.optimizer_thread.join(timeout=2.0)
+        self.logger.info("Predictive optimization stopped")
         
     def add_connection(self, user_name):
-        self.training_data[user_name] = {
-            'features': [],
-            'targets': []
-        }
-        self.models[user_name] = {
-            'latency': RandomForestRegressor(),
-            'packet_loss': RandomForestRegressor(),
-            'bandwidth': RandomForestRegressor()
-        }
-        
-    def update_training_data(self, user_name, metrics, qos_settings):
-        if user_name not in self.training_data:
-            self.add_connection(user_name)
+        """Add a connection to monitor"""
+        with self._lock:
+            self.connections[user_name] = {
+                'latency_history': [],
+                'packet_loss_history': [],
+                'bandwidth_history': [],
+                'last_update': time.time(),
+                'predictions': {}
+            }
             
-        # Extract features from QoS settings and current metrics
-        features = [
-            qos_settings.priority,
-            qos_settings.bandwidth_limit,
-            qos_settings.latency_target,
-            metrics.avg_latency,
-            metrics.jitter,
-            metrics.packet_loss,
-            metrics.bandwidth_utilization
-        ]
-        
-        self.training_data[user_name]['features'].append(features)
-        self.training_data[user_name]['targets'].append([
-            metrics.avg_latency,
-            metrics.packet_loss,
-            metrics.bandwidth_utilization
-        ])
-        
-        # Train models if enough data is available
-        if len(self.training_data[user_name]['features']) >= self.min_samples:
-            self.train_models(user_name)
-            self.suggest_optimizations(user_name)
+    def _optimizer_loop(self):
+        """Background loop for predictive optimization"""
+        while self.running:
+            try:
+                with self._lock:
+                    now = time.time()
+                    for user_name, conn in list(self.connections.items()):
+                        # Update metrics history
+                        self._update_metrics_history(user_name)
+                        # Make predictions
+                        self._make_predictions(user_name)
+                        
+                time.sleep(self.update_interval)
+                
+            except Exception as e:
+                self.logger.error(f"Error in optimizer loop: {e}")
+                time.sleep(1.0)  # Prevent tight loop on error
+                
+    def _update_metrics_history(self, user_name):
+        """Update metrics history for a connection"""
+        try:
+            metrics = self.tunnel_service.network_analytics.get_current_metrics(user_name)
+            if not metrics:
+                return
+                
+            conn = self.connections[user_name]
             
-    def train_models(self, user_name):
-        X = np.array(self.training_data[user_name]['features'])
-        y = np.array(self.training_data[user_name]['targets'])
-        
-        for i, metric in enumerate(['latency', 'packet_loss', 'bandwidth']):
-            self.models[user_name][metric].fit(X, y[:, i])
+            # Add new metrics to history
+            conn['latency_history'].append(metrics.avg_latency)
+            conn['packet_loss_history'].append(metrics.packet_loss)
+            conn['bandwidth_history'].append(metrics.bandwidth_utilization)
             
-    def suggest_optimizations(self, user_name):
-        current_metrics = self.tunnel_service.network_analytics.get_current_metrics(user_name)
-        current_qos = self.tunnel_service.traffic_shaper.get_policy(user_name)
-        
-        # Test different parameter combinations
-        best_suggestion = None
-        best_improvement = 0
-        
-        for priority in range(1, 10):
-            for bw_limit in range(512, 5120, 512):  # 512KB/s to 5MB/s
-                for latency_target in range(20, 200, 20):
-                    suggestion = self.evaluate_parameters(
-                        user_name, priority, bw_limit, latency_target,
-                        current_metrics, current_qos
-                    )
+            # Keep only last N points
+            if len(conn['latency_history']) > self.history_length:
+                conn['latency_history'] = conn['latency_history'][-self.history_length:]
+                conn['packet_loss_history'] = conn['packet_loss_history'][-self.history_length:]
+                conn['bandwidth_history'] = conn['bandwidth_history'][-self.history_length:]
+                
+        except Exception as e:
+            self.logger.error(f"Error updating metrics history: {e}")
+            
+    def _make_predictions(self, user_name):
+        """Make predictions based on historical data"""
+        try:
+            conn = self.connections[user_name]
+            if len(conn['latency_history']) < 10:  # Need at least 10 points
+                return
+                
+            # Simple trend analysis
+            latency_trend = np.polyfit(
+                range(len(conn['latency_history'])), 
+                conn['latency_history'], 
+                1
+            )[0]
+            
+            packet_loss_trend = np.polyfit(
+                range(len(conn['packet_loss_history'])), 
+                conn['packet_loss_history'], 
+                1
+            )[0]
+            
+            # Make predictions
+            predictions = []
+            
+            if latency_trend > 0.5:  # Latency increasing
+                predictions.append("Latency likely to increase")
+                self._apply_preemptive_optimization(user_name, 'latency')
+                
+            if packet_loss_trend > 0.01:  # Packet loss increasing
+                predictions.append("Packet loss likely to increase")
+                self._apply_preemptive_optimization(user_name, 'packet_loss')
+                
+            if predictions:
+                self.prediction_made.emit(user_name, ", ".join(predictions))
+                
+        except Exception as e:
+            self.logger.error(f"Error making predictions: {e}")
+            
+    def _apply_preemptive_optimization(self, user_name, metric_type):
+        """Apply preemptive optimizations based on predictions"""
+        try:
+            if metric_type == 'latency':
+                # Update QoS policy preemptively
+                policy = self.tunnel_service.traffic_shaper.policies.get(user_name)
+                if policy:
+                    policy.priority = max(policy.priority, 5)  # Increase priority
+                    policy.latency_target = 75  # Set conservative target
+                    self.tunnel_service.traffic_shaper.update_policy(user_name, policy)
                     
-                    if suggestion and suggestion.confidence > best_improvement:
-                        best_suggestion = suggestion
-                        best_improvement = suggestion.confidence
-        
-        if best_suggestion:
-            self.optimization_suggested.emit(user_name, best_suggestion)
+            elif metric_type == 'packet_loss':
+                # Enable more aggressive packet recovery
+                if user_name in self.tunnel_service.active_tunnels:
+                    tunnel = self.tunnel_service.active_tunnels[user_name]
+                    if hasattr(tunnel, 'set_recovery_mode'):
+                        tunnel.set_recovery_mode('aggressive')
+                        
+        except Exception as e:
+            self.logger.error(f"Error applying preemptive optimization: {e}")

@@ -20,40 +20,23 @@ class ConnectionDialog(QDialog):
             return
             
         self.connection_in_progress = True
-        self.connect_btn.setEnabled(False)
-        self.connect_btn.setText("Connecting...")
-        
         try:
-            conn_info = self.get_connection_info()
-            if conn_info['type'] == 'direct':
-                success = await self.tunnel_service.connect_to_host(
-                    conn_info['ip'],
-                    conn_info['port'],
-                    conn_info['password']
-                )
-                if success:
-                    super().accept()
-                else:
-                    QMessageBox.critical(
-                        self,
-                        "Connection Failed",
-                        "Failed to establish connection. Please check the IP, port and password."
-                    )
-            else:
-                # Handle local peer connection
-                self.tunnel_service.connect_to_peer(conn_info['peer'])
-                super().accept()
+            host = self.host_input.text().strip()
+            port = int(self.port_input.text().strip())
+            password = self.password_input.text().strip()
+            
+            if not host or not port:
+                raise ValueError("Host and port are required")
                 
+            success = await self.tunnel_service.connect_to_host(host, port, password)
+            if success:
+                super().accept()
+        except ValueError as ve:
+            QMessageBox.critical(self, "Input Error", str(ve))
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Connection Error",
-                f"Connection failed: {str(e)}"
-            )
+            QMessageBox.critical(self, "Connection Error", f"Failed to connect: {str(e)}")
         finally:
             self.connection_in_progress = False
-            self.connect_btn.setEnabled(True)
-            self.connect_btn.setText("Connect")
     
     def setup_ui(self):
         self.setWindowTitle("Connect to Network")

@@ -1,107 +1,128 @@
 from PyQt6.QtCore import QObject, pyqtSignal
 import threading
 import time
-from dataclasses import dataclass
-from typing import Dict, Optional
-
-@dataclass
-class OptimizationResult:
-    success: bool
-    metrics_before: dict
-    metrics_after: dict
-    changes_made: dict
-    improvement: float
+from ezlan.utils.logger import Logger
 
 class AutoOptimizer(QObject):
-    optimization_started = pyqtSignal(str)  # user_name
-    optimization_complete = pyqtSignal(str, OptimizationResult)
+    optimization_applied = pyqtSignal(str, str)  # user, optimization_description
     
     def __init__(self, tunnel_service):
         super().__init__()
+        self.logger = Logger("AutoOptimizer")
         self.tunnel_service = tunnel_service
-        self.optimization_threads: Dict[str, threading.Thread] = {}
-        self.stop_flags: Dict[str, bool] = {}
+        self.running = False
+        self.connections = {}
+        self._lock = threading.Lock()
+        self.update_interval = 5.0  # 5 second update interval
         
-    def start_optimization(self, user_name):
-        if user_name in self.optimization_threads and self.optimization_threads[user_name].is_alive():
-            return False
+    def start(self):
+        """Start auto optimization"""
+        try:
+            self.running = True
+            self.optimizer_thread = threading.Thread(target=self._optimizer_loop, daemon=True)
+            self.optimizer_thread.start()
+            self.logger.info("Auto optimization started")
+        except Exception as e:
+            self.logger.error(f"Failed to start auto optimization: {e}")
+            raise
             
-        self.stop_flags[user_name] = False
-        self.optimization_started.emit(user_name)
+    def stop(self):
+        """Stop auto optimization"""
+        self.running = False
+        if hasattr(self, 'optimizer_thread'):
+            self.optimizer_thread.join(timeout=2.0)
+        self.logger.info("Auto optimization stopped")
         
-        thread = threading.Thread(
-            target=self._optimization_loop,
-            args=(user_name,),
-            daemon=True
-        )
-        self.optimization_threads[user_name] = thread
-        thread.start()
-        return True
-        
-    def stop_optimization(self, user_name):
-        if user_name in self.stop_flags:
-            self.stop_flags[user_name] = True
+    def add_connection(self, user_name):
+        """Add a connection to optimize"""
+        with self._lock:
+            self.connections[user_name] = {
+                'last_optimization': time.time(),
+                'optimizations_applied': []
+            }
             
-    def _optimization_loop(self, user_name):
-        metrics_before = self.tunnel_service.network_analytics.get_current_metrics(user_name)
-        changes_made = {}
-        best_score = self._calculate_performance_score(metrics_before)
-        
-        while not self.stop_flags.get(user_name, True):
-            # Get optimization suggestion
-            suggestion = self.tunnel_service.predictive_optimizer.get_suggestion(user_name)
-            
-            if suggestion and suggestion.confidence > 0.7:  # Only apply high-confidence changes
-                # Apply suggested changes
-                current_policy = self.tunnel_service.traffic_shaper.get_policy(user_name)
-                new_policy = self._apply_suggestion(current_policy, suggestion)
+    def _optimizer_loop(self):
+        """Background loop for auto optimization"""
+        while self.running:
+            try:
+                with self._lock:
+                    now = time.time()
+                    for user_name, conn in list(self.connections.items()):
+                        # Check if enough time has passed since last optimization
+                        if now - conn['last_optimization'] > 30:  # 30 second cooldown
+                            self._optimize_connection(user_name)
+                            conn['last_optimization'] = now
+                            
+                time.sleep(self.update_interval)
                 
-                # Test the changes
-                self.tunnel_service.update_qos_policy(user_name, new_policy)
-                time.sleep(10)  # Wait for effects to stabilize
+            except Exception as e:
+                self.logger.error(f"Error in optimizer loop: {e}")
+                time.sleep(1.0)  # Prevent tight loop on error
                 
-                # Evaluate results
-                current_metrics = self.tunnel_service.network_analytics.get_current_metrics(user_name)
-                new_score = self._calculate_performance_score(current_metrics)
+    def _optimize_connection(self, user_name):
+        """Apply optimizations for a connection"""
+        try:
+            # Get current metrics
+            metrics = self.tunnel_service.network_analytics.get_current_metrics(user_name)
+            if not metrics:
+                return
                 
-                if new_score > best_score:
-                    best_score = new_score
-                    changes_made[suggestion.parameter] = suggestion.suggested_value
-                else:
-                    # Revert changes if no improvement
-                    self.tunnel_service.update_qos_policy(user_name, current_policy)
+            optimizations = []
             
-            time.sleep(30)  # Wait before next optimization attempt
+            # Check latency
+            if metrics.avg_latency > 100:  # High latency
+                self._apply_latency_optimization(user_name)
+                optimizations.append("Latency optimization")
+                
+            # Check packet loss
+            if metrics.packet_loss > 0.02:  # >2% packet loss
+                self._apply_reliability_optimization(user_name)
+                optimizations.append("Reliability optimization")
+                
+            # Check bandwidth
+            if metrics.bandwidth_utilization < 500000:  # <500KB/s
+                self._apply_bandwidth_optimization(user_name)
+                optimizations.append("Bandwidth optimization")
+                
+            if optimizations:
+                self.optimization_applied.emit(user_name, ", ".join(optimizations))
+                
+        except Exception as e:
+            self.logger.error(f"Error optimizing connection: {e}")
             
-        # Calculate final results
-        metrics_after = self.tunnel_service.network_analytics.get_current_metrics(user_name)
-        improvement = (best_score - self._calculate_performance_score(metrics_before)) / best_score
-        
-        result = OptimizationResult(
-            success=bool(changes_made),
-            metrics_before=vars(metrics_before),
-            metrics_after=vars(metrics_after),
-            changes_made=changes_made,
-            improvement=improvement
-        )
-        
-        self.optimization_complete.emit(user_name, result)
-        
-    def _calculate_performance_score(self, metrics):
-        # Weight different metrics based on importance
-        latency_score = max(0, 1 - (metrics.avg_latency / 200))
-        packet_loss_score = max(0, 1 - (metrics.packet_loss * 20))
-        bandwidth_score = min(1, metrics.bandwidth_utilization / (1024 * 1024))
-        stability_score = metrics.connection_stability
-        
-        return (
-            latency_score * 0.3 +
-            packet_loss_score * 0.3 +
-            bandwidth_score * 0.2 +
-            stability_score * 0.2
-        )
-        
-    def _apply_suggestion(self, current_policy, suggestion):
-        new_policy = current_policy.copy()
-        setattr(new_policy, suggestion.parameter, suggestion.suggested_value)
-        return new_policy
+    def _apply_latency_optimization(self, user_name):
+        """Apply optimizations for high latency"""
+        try:
+            # Update QoS policy
+            policy = self.tunnel_service.traffic_shaper.policies.get(user_name)
+            if policy:
+                policy.priority = max(policy.priority, 6)  # Increase priority
+                policy.latency_target = 50  # Set target latency to 50ms
+                self.tunnel_service.traffic_shaper.update_policy(user_name, policy)
+                
+        except Exception as e:
+            self.logger.error(f"Error applying latency optimization: {e}")
+            
+    def _apply_reliability_optimization(self, user_name):
+        """Apply optimizations for packet loss"""
+        try:
+            # Enable packet retransmission
+            if user_name in self.tunnel_service.active_tunnels:
+                tunnel = self.tunnel_service.active_tunnels[user_name]
+                if hasattr(tunnel, 'enable_retransmission'):
+                    tunnel.enable_retransmission()
+                    
+        except Exception as e:
+            self.logger.error(f"Error applying reliability optimization: {e}")
+            
+    def _apply_bandwidth_optimization(self, user_name):
+        """Apply optimizations for low bandwidth"""
+        try:
+            # Update bandwidth allocation
+            self.tunnel_service.bandwidth_allocator.increase_allocation(
+                user_name,
+                increment=1024*1024  # Increase by 1MB/s
+            )
+            
+        except Exception as e:
+            self.logger.error(f"Error applying bandwidth optimization: {e}")

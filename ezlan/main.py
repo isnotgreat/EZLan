@@ -6,6 +6,7 @@ import qasync
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from ezlan.gui.main_window import MainWindow
 from ezlan.network.discovery import DiscoveryService
+from ezlan.network.interface_manager import InterfaceManager
 from ezlan.network.tunnel import TunnelService
 from ezlan.utils.installer import SystemInstaller
 from ezlan.utils.logger import Logger
@@ -21,7 +22,14 @@ def elevate():
     try:
         script = sys.argv[0]
         params = ' '.join(sys.argv[1:])
-        ret = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, f'"{script}" {params}', None, 1)
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            sys.executable,
+            f'"{script}" {params}',
+            None,
+            1
+        )
         if ret <= 32:  # Error codes from ShellExecuteW
             raise RuntimeError(f"Failed to elevate privileges (error code: {ret})")
         return True
@@ -30,71 +38,74 @@ def elevate():
         input("Press Enter to exit...")
         return False
 
-async def async_main(app):
-    logger = Logger("Main")
-    
-    # Check and setup system requirements
-    try:
-        installer = SystemInstaller()
-        installer.check_and_setup()
-    except Exception as e:
-        QMessageBox.critical(None, "Setup Error", 
-            f"Failed to setup required components: {str(e)}\n"
-            "Please run the application as administrator and ensure you have internet connectivity.")
-        return 1
-    
-    try:
-        # Initialize network services
-        discovery_service = DiscoveryService()
-        tunnel_service = TunnelService()
+class Application:
+    def __init__(self):
+        self.app = QApplication(sys.argv)
+        self.loop = qasync.QEventLoop(self.app)
+        asyncio.set_event_loop(self.loop)
+        self.logger = Logger("Application")
+        self.installer = SystemInstaller()
+        self.interface_manager = InterfaceManager()
+        self.discovery_service = DiscoveryService()
+        self.tunnel_service = TunnelService()
+        self.main_window = MainWindow(self.discovery_service, self.tunnel_service)
         
-        # Create and show main window
-        window = MainWindow(discovery_service, tunnel_service)
-        window.show()
-        
-        try:
-            # Start discovery service after window is shown
-            discovery_service.start_discovery()
-        except Exception as e:
-            logger.warning(f"Discovery service failed to start: {e}")
-            
-        return 0
-        
-    except Exception as e:
-        logger.error(f"Application startup failed: {e}")
-        QMessageBox.critical(None, "Startup Error", 
-            f"Failed to start application: {str(e)}")
-        return 1
+        # Connect cleanup handlers
+        self.app.aboutToQuit.connect(lambda: asyncio.create_task(self.cleanup()))
 
-def main():
-    try:
-        if not is_admin():
-            if not elevate():
-                return 1
+    async def cleanup(self):
+        """Clean up resources before quitting"""
+        try:
+            self.discovery_service.stop_discovery()
+            if hasattr(self, 'interface_manager'):
+                await self.interface_manager.cleanup_interface()
+        except Exception as e:
+            self.logger.error(f"Cleanup error: {e}")
+
+    async def run(self):
+        try:
+            # Setup and show main window
+            self.installer.check_and_setup()
+            self.main_window.show()
+
+            # Create virtual interface
+            if not await self.interface_manager.create_interface():
+                raise RuntimeError("Failed to create virtual interface")
+
+            # Start discovery service
+            self.discovery_service.start_discovery()
+
+            # Keep the application running
+            while self.main_window.isVisible():
+                await asyncio.sleep(0.1)
+                self.app.processEvents()  # Process Qt events
+
+            # Cleanup before exit
+            await self.cleanup()
             return 0
 
-        # Create the application first
-        app = QApplication(sys.argv)
-        
-        # Create event loop after QApplication
-        loop = qasync.QEventLoop(app)
-        asyncio.set_event_loop(loop)
-        
-        # Run the async main
-        exit_code = loop.run_until_complete(async_main(app))
-        
-        if exit_code == 0:
-            # Start the event loop
-            sys.exit(app.exec())
+        except Exception as e:
+            self.logger.error(f"Application error: {e}")
+            await self.cleanup()
+            QMessageBox.critical(None, "Error", str(e))
+            return 1
+
+def main():
+    if not is_admin():
+        if elevate():
+            sys.exit(0)
         else:
-            sys.exit(exit_code)
-            
-    except Exception as e:
-        print(f"Fatal error: {e}")
-        print("\nStack trace:")
-        traceback.print_exc()
-        input("\nPress Enter to exit...")
-        return 1
+            sys.exit(1)
+    
+    app = Application()
+    with app.loop:
+        try:
+            app.loop.run_until_complete(app.run())
+            app.loop.run_forever()  # Add this line
+        except Exception as e:
+            app.logger.error(f"Application failed: {e}")
+            traceback.print_exc()
+            sys.exit(1)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

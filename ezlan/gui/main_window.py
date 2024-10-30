@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, 
                            QPushButton, QLineEdit, QLabel, QHBoxLayout,
                            QSplitter, QMessageBox)
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSlot, QEvent, QTimer
 import qasync
 from .components.user_list import UserList
 from .components.connection_dialog import ConnectionDialog
@@ -15,6 +15,7 @@ from ezlan.network.tunnel import TunnelService
 from ezlan.utils.logger import Logger
 from .components.host_dialog import HostDialog  # Add this import
 from .components.host_status_panel import HostStatusPanel
+import asyncio
 
 class MainWindow(QMainWindow):
     def __init__(self, discovery_service: DiscoveryService, tunnel_service: TunnelService):
@@ -110,94 +111,102 @@ class MainWindow(QMainWindow):
         layout.addWidget(splitter)
     
     def _setup_connections(self):
-        # Add host status panel connections
-        self.host_status.stop_btn.clicked.connect(self._stop_hosting)
-        
-        # Add host button connection using qasync
-        @qasync.asyncSlot(bool)
-        async def host_clicked(checked=False):
-            await self._show_host_dialog()
-        
-        self.host_btn.clicked.connect(host_clicked)
-        
-        # Update existing connections
-        self.connect_btn.clicked.connect(self._show_connection_dialog)
-        self.disconnect_btn.clicked.connect(self._handle_disconnect)
-        self.discovery_service.peer_discovered.connect(self.user_list.add_user)
-        self.discovery_service.peer_lost.connect(self.user_list.remove_user)
-        self.tunnel_service.connection_established.connect(self._handle_connection_established)
-        self.tunnel_service.connection_failed.connect(self._handle_connection_failed)
-        self.tunnel_service.connection_closed.connect(self._handle_connection_closed)
-        self.tunnel_service.host_started.connect(self._handle_host_started)
+        """Setup signal connections"""
+        try:
+            # Add host status panel connections
+            self.host_status.stop_btn.clicked.connect(self._stop_hosting)
+            
+            # Add host button connection
+            self.host_btn.clicked.connect(self._show_host_dialog)
+            
+            # Add connect button connection
+            self.connect_btn.clicked.connect(self._show_connection_dialog)
+            
+            # Add disconnect button connection
+            self.disconnect_btn.clicked.connect(self._handle_disconnect)
+            
+            # Add discovery service connections
+            self.discovery_service.peer_discovered.connect(self.user_list.add_user)
+            self.discovery_service.peer_lost.connect(self.user_list.remove_user)
+            
+            # Add tunnel service connections
+            self.tunnel_service.connection_established.connect(self._handle_connection_established)
+            self.tunnel_service.connection_failed.connect(self._handle_connection_failed)
+            self.tunnel_service.connection_closed.connect(self._handle_connection_closed)
+            self.tunnel_service.host_started.connect(self._handle_host_started)
+            
+        except Exception as e:
+            self.logger.warning(f"Failed to setup some connections: {e}")
+            # Fall back to basic connections
+            self._setup_basic_connections()
     
-    @qasync.asyncSlot()
-    async def _show_host_dialog(self):
-        """Show host dialog and start hosting if accepted"""
-        dialog = HostDialog(self)
-        if dialog.exec():
-            host_info = dialog.get_host_info()
-            try:
-                await self.tunnel_service.start_hosting(
-                    host_info['name'],
-                    host_info['password'],
-                    host_info.get('port', 12345)
-                )
-            except Exception as e:
-                self.logger.error(f"Failed to start hosting: {e}")
-                QMessageBox.critical(
-                    self,
-                    "Hosting Error",
-                    f"Failed to start hosting: {str(e)}"
-                )
-
-    def _show_connection_dialog(self):
-        dialog = ConnectionDialog(self, self.tunnel_service)
-        if dialog.exec():
-            conn_info = dialog.get_connection_info()
-            if conn_info:  # Add null check
-                if conn_info['type'] == 'local':
-                    self.tunnel_service.connect_to_peer(conn_info['peer'])
-                else:
-                    self.tunnel_service.connect_to_host(
-                        conn_info['ip'],
-                        conn_info['port'],
-                        conn_info['password']
-                    )
-
-    def _handle_connection_established(self, peer_info):
-        self.connection_monitor.start_monitoring(peer_info['name'], peer_info['ip'])
-        self.optimization_feedback.set_user(peer_info['name'])
-        self.connect_btn.setEnabled(False)
-        self.disconnect_btn.setEnabled(True)
-        self.logger.info(f"Connection established with {peer_info['name']}")
-    
-    def _handle_connection_failed(self, error):
-        self.logger.error(f"Connection failed: {error}")
-        QMessageBox.critical(
-            self,
-            "Connection Failed",
-            f"Failed to connect: {error}\n\n"
-            "Please ensure:\n"
-            "- The host IP and port are correct\n"
-            "- The host's network allows incoming connections\n"
-            "- The password is correct"
-        )
-        self.connect_btn.setEnabled(True)
-        self.disconnect_btn.setEnabled(False)
-
+    @pyqtSlot(dict)
     def _handle_host_started(self, host_info):
+        """Handle when hosting starts"""
+        public_ip = host_info.get('public_ip', 'Unknown')
+        tunnel_port = host_info.get('port', '12345')
         self.host_status.update_host_info(host_info)
-        self.host_btn.setEnabled(False)  # Disable host button while hosting
+        self.host_btn.setEnabled(False)
+        self.host_status.stop_btn.setEnabled(True)
         QMessageBox.information(
             self,
             "Hosting Started",
-            f"Network is now hosted at:\nIP: {host_info['public_ip']}\nPort: {host_info['port']}"
+            f"Network is now hosted at:\nIP: {public_ip}\nPort: {tunnel_port}"
         )
 
-    def _stop_hosting(self):
-        self.tunnel_service.stop_hosting()
-        self.host_status.hide()
+    @pyqtSlot(str)
+    def _handle_host_failed(self, error_message):
+        QMessageBox.critical(
+            self,
+            "Hosting Failed",
+            f"Failed to start hosting: {error_message}"
+        )
         self.host_btn.setEnabled(True)
+
+    @pyqtSlot(str)
+    def _handle_interface_created(self, interface_name):
+        self.logger.info(f"Interface '{interface_name}' created successfully.")
+        QMessageBox.information(
+            self,
+            "Interface Created",
+            f"Virtual interface '{interface_name}' created successfully."
+        )
+
+    @pyqtSlot(str)
+    def _handle_interface_error(self, error_message):
+        self.logger.error(f"Interface creation failed: {error_message}")
+        QMessageBox.critical(
+            self,
+            "Interface Creation Failed",
+            f"Failed to create virtual interface: {error_message}"
+        )
+        self.host_btn.setEnabled(True)
+
+    @qasync.asyncSlot()
+    async def _stop_hosting(self):
+        """Stop hosting and cleanup"""
+        try:
+            # Disable the stop button while processing
+            self.host_status.stop_btn.setEnabled(False)
+            await self.tunnel_service.stop_hosting()
+            self.host_status.hide()
+            self.host_btn.setEnabled(True)
+            
+            # Use QTimer to defer the message box
+            QTimer.singleShot(0, lambda: QMessageBox.information(
+                self,
+                "Hosting Stopped",
+                "The network hosting has been stopped."
+            ))
+        except Exception as e:
+            self.logger.error(f"Failed to stop hosting: {e}")
+            QTimer.singleShot(0, lambda: QMessageBox.critical(
+                self,
+                "Hosting Error",
+                f"Failed to stop hosting: {str(e)}"
+            ))
+        finally:
+            self.host_status.stop_btn.setEnabled(True)
 
     def _handle_connection_closed(self, peer_name):
         self.logger.info(f"Connection closed with {peer_name}")
@@ -244,3 +253,105 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.logger.error(f"Error disconnecting: {e}")
             QMessageBox.critical(self, "Error", f"Failed to disconnect: {str(e)}")
+
+    def _handle_host_click(self):
+        asyncio.create_task(self._start_hosting())
+
+    def _show_connection_dialog(self):
+        """Show dialog for connecting to a peer"""
+        try:
+            dialog = ConnectionDialog(self, self.tunnel_service)  # Pass tunnel_service here
+            if dialog.exec():
+                connection_info = dialog.get_connection_info()
+                self.tunnel_service.connect_to_peer(
+                    connection_info['host'],
+                    connection_info['port'],
+                    connection_info.get('password', '')
+                )
+        except Exception as e:
+            self.logger.error(f"Failed to show connection dialog: {e}")
+            QMessageBox.critical(
+                self,
+                "Connection Error",
+                f"Failed to connect: {str(e)}"
+            )
+
+    def _show_host_dialog(self):
+        """Show dialog for hosting"""
+        try:
+            dialog = HostDialog(self)
+            if dialog.exec():
+                host_info = dialog.get_host_info()
+                # Use qasync's asyncSlot directly
+                asyncio.create_task(self._handle_host_start(host_info))
+        except Exception as e:
+            self.logger.error(f"Failed to show host dialog: {e}")
+            QMessageBox.critical(
+                self,
+                "Hosting Error",
+                f"Failed to show host dialog: {str(e)}"
+            )
+
+    @qasync.asyncSlot()
+    async def _handle_host_start(self, host_info):
+        """Handle the start hosting request"""
+        try:
+            # Start hosting and get the host info from tunnel service
+            await self.tunnel_service.start_hosting(host_info)
+            # Don't show another message here since _handle_host_started will show it
+        except Exception as e:
+            self.logger.error(f"Failed to start hosting: {e}")
+            QMessageBox.critical(
+                self,
+                "Hosting Error",
+                f"Failed to start hosting: {str(e)}"
+            )
+
+    @pyqtSlot(dict)
+    def _handle_connection_established(self, peer_info):
+        """Handle successful connection to peer"""
+        self.logger.info(f"Connection established with {peer_info['name']}")
+        self.connection_monitor.start_monitoring(peer_info['name'], peer_info['host'])
+        self.optimization_feedback.set_user(peer_info['name'])
+        self.connect_btn.setEnabled(False)
+        self.disconnect_btn.setEnabled(True)
+        self.connection_status.update_status("Connected")
+        QMessageBox.information(
+            self,
+            "Connection Established",
+            f"Successfully connected to {peer_info['name']}"
+        )
+
+    @pyqtSlot(str)
+    def _handle_connection_failed(self, error_message):
+        """Handle failed connection attempt"""
+        self.logger.error(f"Connection failed: {error_message}")
+        self.connect_btn.setEnabled(True)
+        self.disconnect_btn.setEnabled(False)
+        self.connection_status.update_status("Disconnected")
+        QMessageBox.critical(
+            self,
+            "Connection Failed",
+            f"Failed to connect: {error_message}"
+        )
+
+    async def on_close_event(self):
+        """Handle window close event and cleanup"""
+        try:
+            self.logger.info("Main window is closing.")
+            
+            # Stop all active connections first
+            for peer_name in list(self.tunnel_service.active_tunnels.keys()):
+                self.tunnel_service.disconnect_from_peer(peer_name)
+            
+            # Stop discovery service
+            self.discovery_service.stop_discovery()
+            
+            # Stop hosting if active
+            await self.tunnel_service.stop_hosting()
+            
+            # Close the window after cleanup
+            QTimer.singleShot(0, self.close)
+            
+        except Exception as e:
+            self.logger.error(f"Error during cleanup: {e}")

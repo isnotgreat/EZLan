@@ -41,3 +41,20 @@ class QoSProfileManager:
                 description='Basic connectivity for web browsing'
             )
         }
+
+class GamingQoSProfile:
+    def __init__(self):
+        self.presets = {
+            'FPS': {
+                'priority': 8,
+                'bandwidth_limit': 2048 * 1024,  # 2MB/s
+                'latency_target': 20,
+                'buffer_size': 32 * 1024  # 32KB buffer
+            },
+            'MOBA': {
+                'priority': 7,
+                'bandwidth_limit': 1024 * 1024,  # 1MB/s
+                'latency_target': 30,
+                'buffer_size': 64 * 1024  # 64KB buffer
+            }
+        }

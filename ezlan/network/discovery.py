@@ -3,6 +3,8 @@ from ezlan.utils.logger import Logger
 import netifaces
 import socket
 import json
+import threading
+import time
 
 class DiscoveryService(QObject):
     # Define signals
@@ -15,29 +17,68 @@ class DiscoveryService(QObject):
         self.logger = Logger("DiscoveryService")
         self.known_peers = {}
         self.broadcast_port = 5000
+        self.PORT = 12346  # Define discovery port
+        self._running = False
+        self._discovery_thread = None
         self.setup_socket()
         
     def setup_socket(self):
         """Setup UDP socket for peer discovery"""
         try:
+            # Close existing socket if it exists
+            if hasattr(self, 'socket'):
+                try:
+                    self.socket.close()
+                except:
+                    pass
+
+            # Create new socket with proper permissions
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            self.socket.bind(('', self.broadcast_port))
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            
+            # Try different ports if the default one is in use
+            ports_to_try = [self.broadcast_port, 0]  # Try specified port, then let OS choose
+            for port in ports_to_try:
+                try:
+                    self.socket.bind(('0.0.0.0', port))
+                    if port == 0:
+                        self.broadcast_port = self.socket.getsockname()[1]
+                    break
+                except OSError as e:
+                    if port == ports_to_try[-1]:  # Last attempt failed
+                        raise
+                    continue
+                    
             self.socket.setblocking(False)
-            self.logger.info("Discovery socket setup complete")
+            self.logger.info(f"Discovery socket setup complete on port {self.broadcast_port}")
         except Exception as e:
             self.logger.error(f"Failed to setup discovery socket: {e}")
-            
+            raise
+        
     def start_discovery(self):
-        """Start broadcasting presence and listening for peers"""
         try:
-            # Broadcast presence
-            self._broadcast_presence()
-            # Start listening for other peers
-            self._start_listening()
+            if hasattr(self, 'socket'):
+                self.stop_discovery()  # Clean up existing socket
+                
+            self.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                self.socket.bind(('', self.PORT))
+            except OSError as e:
+                if e.errno == 10048:  # Address already in use
+                    self.logger.warning("Discovery port already in use, trying alternative")
+                    self.socket.bind(('', 0))  # Let OS choose port
+                    
+            self.socket.setblocking(False)
+            self._running = True
+            self._discovery_thread = threading.Thread(target=self._discovery_loop)
+            self._discovery_thread.daemon = True
+            self._discovery_thread.start()
             self.logger.info("Discovery service started")
         except Exception as e:
-            self.logger.error(f"Failed to start discovery: {e}")
+            self.logger.error(f"Failed to setup discovery socket: {e}")
+            self._running = False
             
     def _broadcast_presence(self):
         """Broadcast presence to network"""
@@ -48,7 +89,17 @@ class DiscoveryService(QObject):
                 'type': 'presence'
             }
             message = json.dumps(presence_data).encode()
-            self.socket.sendto(message, ('<broadcast>', self.broadcast_port))
+            
+            # Use a separate socket for broadcasting
+            broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            
+            try:
+                broadcast_socket.sendto(message, ('<broadcast>', self.broadcast_port))
+            finally:
+                broadcast_socket.close()
+            
         except Exception as e:
             self.logger.error(f"Failed to broadcast presence: {e}")
             
@@ -119,3 +170,14 @@ class DiscoveryService(QObject):
             del self.known_peers[peer_name]
             self.peer_lost.emit(peer_name)
             self.logger.info(f"Lost peer: {peer_name}")
+
+    def _discovery_loop(self):
+        """Background loop for discovery service"""
+        while self._running:
+            try:
+                self._broadcast_presence()
+                self._start_listening()
+                time.sleep(1)  # Wait before next iteration
+            except Exception as e:
+                self.logger.error(f"Error in discovery loop: {e}")
+                time.sleep(1)  # Prevent tight loop on error

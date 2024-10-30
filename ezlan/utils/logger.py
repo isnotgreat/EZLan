@@ -1,17 +1,26 @@
 import logging
-from logging import getLogger, StreamHandler, Formatter, INFO
-from datetime import datetime
+import asyncio
+from logging.handlers import QueueHandler, QueueListener
+from multiprocessing import Queue
 
 class Logger:
     def __init__(self, name):
-        self.logger = getLogger(name)
-        self.logger.setLevel(INFO)
+        self.logger = logging.getLogger(name)
+        self.logger.setLevel(logging.DEBUG)
         
-        if not self.logger.handlers:
-            handler = StreamHandler()
-            formatter = Formatter('%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s')
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
+        # Create a queue for logging
+        self.log_queue = Queue()
+        handler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        
+        # Use QueueHandler for thread-safe logging
+        queue_handler = QueueHandler(self.log_queue)
+        self.logger.addHandler(queue_handler)
+        
+        # Start a listener thread
+        listener = QueueListener(self.log_queue, handler)
+        listener.start()
     
     def info(self, message):
         self.logger.info(message)

@@ -1,94 +1,93 @@
-from ezlan.utils.logger import Logger
-import requests
-import os
+from ..utils.logger import Logger
 import subprocess
-import platform
-import shutil
-from pathlib import Path
-import time
-import winreg
+import json
 
 class SystemInstaller:
     def __init__(self):
         self.logger = Logger("SystemInstaller")
-        self.resources_dir = Path(__file__).parent.parent / "resources"
-        self.tap_driver_path = self.resources_dir / "tap-windows.exe"
-        self.tap_adapter_key = r"SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}"
-
-    def install_tap_driver(self):
-        """Install TAP driver if not already installed"""
-        if self._is_tap_driver_installed():
-            return True
-            
+    
+    def check_hyper_v_enabled(self) -> bool:
+        """Check if Hyper-V is enabled using multiple methods."""
         try:
-            if not self.tap_driver_path.exists():
-                raise RuntimeError("TAP driver installer not found")
-                
-            # Run the TAP driver installer
-            result = subprocess.run([
-                str(self.tap_driver_path)
-            ], check=True, capture_output=True, text=True)
+            # Method 1: Check using PowerShell
+            ps_result = subprocess.run([
+                "powershell", "-Command",
+                "(Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V-All).State"
+            ], capture_output=True, text=True, check=True)
             
-            time.sleep(5)
+            if "Enabled" in ps_result.stdout:
+                self.logger.info("Hyper-V is enabled (PowerShell check).")
+                return True
             
-            if not self._is_tap_driver_installed():
-                raise RuntimeError("TAP driver installation failed")
-                
-            return True
+            # Method 2: Check Hyper-V service status
+            service_result = subprocess.run([
+                "powershell", "-Command",
+                "Get-Service vmms | Select-Object -ExpandProperty Status"
+            ], capture_output=True, text=True, check=True)
+            
+            if "Running" in service_result.stdout:
+                self.logger.info("Hyper-V service is running.")
+                return True
+            
+            self.logger.info(f"Hyper-V status: PowerShell={ps_result.stdout.strip()}, Service={service_result.stdout.strip()}")
+            return False
             
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to install TAP driver: {e.stderr}")
-
-    def check_and_setup(self):
-        """Check and setup required system components"""
+            self.logger.error(f"Failed to check Hyper-V status: {e.stderr.strip()}")
+            return False
+    
+    def get_detailed_hyper_v_status(self) -> dict:
+        """Get detailed Hyper-V status information."""
         try:
-            if platform.system().lower() == 'windows':
-                if not self._is_tap_driver_installed():
-                    self.logger.info("TAP driver not found, launching installer...")
-                    
-                    if not self.tap_driver_path.exists():
-                        raise RuntimeError("TAP driver installer not found in resources folder")
-                    
-                    self.logger.info("Please complete the TAP driver installation wizard...")
-                    process = subprocess.run([str(self.tap_driver_path)], shell=True)
-                    
-                    max_attempts = 30
-                    for attempt in range(max_attempts):
-                        if self._is_tap_driver_installed():
-                            self.logger.info("TAP driver installation completed successfully")
-                            return True
-                        time.sleep(10)
-                        self.logger.info("Waiting for TAP driver installation to complete...")
-                    
-                    raise RuntimeError("TAP driver installation timed out - please try again")
-                        
-            return True
+            result = subprocess.run([
+                "powershell", "-Command",
+                "$features = @('Microsoft-Hyper-V', 'Microsoft-Hyper-V-Management-PowerShell', " +
+                "'Microsoft-Hyper-V-Management-Clients', 'Microsoft-Hyper-V-Services', " +
+                "'Microsoft-Hyper-V-Hypervisor'); " +
+                "$status = @{}; " +
+                "foreach ($feature in $features) { " +
+                "    $state = (Get-WindowsOptionalFeature -Online -FeatureName $feature).State; " +
+                "    $status[$feature] = $state; " +
+                "}; " +
+                "ConvertTo-Json $status"
+            ], capture_output=True, text=True, check=True)
+            
+            return json.loads(result.stdout)
             
         except Exception as e:
-            self.logger.error(f"Setup failed: {e}")
-            raise RuntimeError(f"Failed to setup required components: {e}")
-
-    def _is_tap_driver_installed(self):
-        """Check if TAP driver is installed using Windows registry"""
+            self.logger.error(f"Failed to get detailed Hyper-V status: {e}")
+            return {}
+    
+    def enable_hyper_v(self) -> bool:
+        """Enable Hyper-V using PowerShell."""
         try:
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, self.tap_adapter_key, 0, winreg.KEY_READ) as key:
-                # Enumerate all network adapters
-                index = 0
-                while True:
-                    try:
-                        subkey_name = winreg.EnumKey(key, index)
-                        with winreg.OpenKey(key, subkey_name) as subkey:
-                            try:
-                                component_id = winreg.QueryValueEx(subkey, "ComponentId")[0]
-                                if component_id == "tap0901":
-                                    self.logger.info("Found TAP driver in registry")
-                                    return True
-                            except WindowsError:
-                                pass
-                        index += 1
-                    except WindowsError:
-                        break
+            self.logger.info("Enabling Hyper-V...")
+            subprocess.run([
+                "powershell", "-Command",
+                "Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All"
+            ], check=True, capture_output=True, text=True)
+            self.logger.info("Hyper-V enablement command executed successfully.")
+            return True
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"Failed to enable Hyper-V: {e.stderr.strip()}")
             return False
-        except Exception as e:
-            self.logger.error(f"Error checking registry: {e}")
-            return False
+    
+    def check_and_setup(self):
+        """Check and setup system requirements."""
+        if not self.check_hyper_v_enabled():
+            # Get detailed status for debugging
+            status = self.get_detailed_hyper_v_status()
+            self.logger.info(f"Detailed Hyper-V status: {json.dumps(status, indent=2)}")
+            
+            user_response = input(
+                "Hyper-V is not properly enabled. Do you want to enable it now? (y/n): "
+            )
+            if user_response.lower() == 'y':
+                if self.enable_hyper_v():
+                    self.logger.info("Hyper-V enabled successfully. A system restart is required.")
+                    raise RuntimeError("Hyper-V has been enabled. Please restart your computer and run the application again.")
+                else:
+                    self.logger.error("Failed to enable Hyper-V.")
+                    raise RuntimeError("Failed to enable Hyper-V. Please enable it manually and restart your computer.")
+            else:
+                raise RuntimeError("Hyper-V is required for this application to run.")

@@ -16,53 +16,11 @@ class PerformanceDashboard(QWidget):
         self._running = True
         self._setup_ui()
         
-        # Start the update loop using qasync
-        self.start_update_loop()
+        # Use QTimer instead of async loop for updates
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self._update_metrics)
+        self.update_timer.start(1000)  # Update every second
         
-    def start_update_loop(self):
-        """Start the async update loop"""
-        loop = asyncio.get_event_loop()
-        self.update_task = loop.create_task(self._update_loop())
-        
-    async def _update_loop(self):
-        """Async loop to update metrics"""
-        while self._running:
-            try:
-                await self.update_metrics()
-                await asyncio.sleep(1)  # Update every second
-            except Exception as e:
-                self.logger.error(f"Error in update loop: {e}")
-                await asyncio.sleep(1)  # Prevent tight loop on error
-                
-    @qasync.asyncSlot()
-    async def update_metrics(self):
-        """Update metrics for all active connections"""
-        try:
-            for user_name, tunnel in self.tunnel_service.active_tunnels.items():
-                metrics = self.tunnel_service.network_analytics.get_current_metrics(user_name)
-                
-                # Add user tab if it doesn't exist
-                if not any(user_name in self.tab_widget.tabText(i) for i in range(self.tab_widget.count())):
-                    self.add_user_tab(user_name)
-                
-                # Update plots only if we have metrics
-                if metrics:
-                    self.update_user_plots(user_name, metrics)
-                    
-                # Update health score (will be 0 if no metrics)
-                health_score = self.calculate_health_score(metrics)
-                self.health_score.setValue(int(health_score * 100))
-                
-        except Exception as e:
-            self.logger.error(f"Error updating metrics: {e}")
-            
-    def closeEvent(self, event):
-        """Handle widget close event"""
-        self._running = False
-        if hasattr(self, 'update_task'):
-            self.update_task.cancel()
-        super().closeEvent(event)
-
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         self.tab_widget = QTabWidget()
@@ -89,6 +47,33 @@ class PerformanceDashboard(QWidget):
         
         self.tab_widget.addTab(overview_widget, "Overview")
         
+    def _update_metrics(self):
+        """Update metrics for all active connections - non-async version"""
+        try:
+            for user_name, tunnel in self.tunnel_service.active_tunnels.items():
+                metrics = self.tunnel_service.network_analytics.get_current_metrics(user_name)
+                
+                # Add user tab if it doesn't exist
+                if not any(user_name in self.tab_widget.tabText(i) for i in range(self.tab_widget.count())):
+                    self.add_user_tab(user_name)
+                
+                # Update plots only if we have metrics
+                if metrics:
+                    self.update_user_plots(user_name, metrics)
+                    
+                # Update health score (will be 0 if no metrics)
+                health_score = self.calculate_health_score(metrics)
+                self.health_score.setValue(int(health_score * 100))
+                
+        except Exception as e:
+            print(f"Error updating metrics: {e}")
+            
+    def closeEvent(self, event):
+        """Handle widget close event"""
+        self._running = False
+        self.update_timer.stop()
+        super().closeEvent(event)
+
     def create_plot(self, title):
         plot_widget = pg.PlotWidget()
         plot_widget.setTitle(title)
@@ -150,7 +135,7 @@ class PerformanceDashboard(QWidget):
             return (latency_score * 0.4 + packet_loss_score * 0.4 + bandwidth_score * 0.2)
             
         except Exception as e:
-            self.logger.error(f"Error calculating health score: {e}")
+            print(f"Error calculating health score: {e}")
             return 0.0
 
     def _cleanup(self):

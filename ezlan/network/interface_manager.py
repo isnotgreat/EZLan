@@ -1,89 +1,60 @@
-from ctypes import *
+from PyQt6.QtCore import QObject, pyqtSignal
+from .hyperv_interface import HyperVInterfaceManager
+from ..utils.logger import Logger
+import time
 import subprocess
-import platform
-import winreg
-from pathlib import Path
+import asyncio
 
-class WindowsInterfaceManager(VirtualInterfaceManager):
+class InterfaceManager(QObject):
+    interface_created = pyqtSignal(str)  # interface_name
+    interface_error = pyqtSignal(str)    # error_message
+
     def __init__(self):
-        self.tap_name = "EZLan-TAP"
-        self.component_id = "tap0901"
-        self.adapter_key = r"SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002BE10318}"
-        self.installer = SystemInstaller()
-        self.installer.check_and_setup()
-        
-    def create_interface(self):
-        try:
-            # Check if TAP adapter already exists
-            if self._find_tap_adapter():
-                return self.tap_name
+        super().__init__()
+        self.logger = Logger("InterfaceManager")
+        self.interface_manager = HyperVInterfaceManager()
+        self.is_active = False
 
-            # Create new TAP adapter using devcon
-            adapter_name = "TAP-Windows Adapter V9"
-            subprocess.run([
-                "netsh", "interface", "set", "interface",
-                f'"{adapter_name}"', "newname=EZLan-TAP"
-            ], check=True, capture_output=True)
-            
-            self._wait_for_interface()
-            return self.tap_name
-            
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to create TAP interface: {e}")
-            
-    def configure_interface(self, ip_address):
+        # Connect signals from HyperVInterfaceManager to InterfaceManager's handlers
+        self.interface_manager.interface_created.connect(self.on_interface_created)
+        self.interface_manager.interface_error.connect(self.on_interface_error)
+
+    async def create_interface(self) -> bool:
         try:
-            # Configure IP address
-            subprocess.run([
-                "netsh", "interface", "ip",
-                "set", "address",
-                f'name="{self.tap_name}"',
-                "static", ip_address, "255.255.255.0"
-            ], check=True, capture_output=True)
-            
-            # Enable the interface
-            subprocess.run([
-                "netsh", "interface", "set",
-                "interface", f'"{self.tap_name}"',
-                "admin=enable"
-            ], check=True, capture_output=True)
-            
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Failed to configure TAP interface: {e}")
-            
-    def cleanup(self):
-        try:
-            subprocess.run([
-                str(self.tapctl_path), "delete",
-                "--name", self.tap_name
-            ], check=True, capture_output=True, shell=True)
-        except subprocess.CalledProcessError:
-            pass
-            
-    def _find_tap_adapter(self):
-        """Check if our TAP adapter exists"""
-        try:
-            result = subprocess.run([
-                "netsh", "interface", "show", "interface",
-                f'name="{self.tap_name}"'
-            ], capture_output=True, text=True)
-            return result.returncode == 0
-        except subprocess.CalledProcessError:
+            if self.is_active:
+                self.logger.info("Interface already active.")
+                return True
+
+            success = await self.interface_manager.create_interface()
+            if success:
+                self.logger.info("Virtual interface creation succeeded.")
+                await asyncio.sleep(2)  # Ensure interface is up
+                self.is_active = True
+                return True
+            else:
+                self.logger.error("Virtual interface creation failed.")
+                return False
+
+        except Exception as e:
+            self.logger.error(f"Interface creation error: {str(e)}")
             return False
-            
-    def _wait_for_interface(self, timeout=10):
-        import time
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            try:
-                result = subprocess.run(
-                    ["netsh", "interface", "show", "interface", f'"{self.tap_name}"'],
-                    capture_output=True,
-                    text=True
-                )
-                if self.tap_name in result.stdout:
-                    return True
-                time.sleep(0.5)
-            except subprocess.CalledProcessError:
-                time.sleep(0.5)
-        raise RuntimeError("Timeout waiting for TAP interface to be ready")
+
+    def on_interface_created(self, interface_name):
+        self.logger.info(f"Interface '{interface_name}' created successfully.")
+        self.is_active = True
+        self.interface_created.emit(interface_name)  # Emit InterfaceManager's signal
+
+    def on_interface_error(self, error_message):
+        self.logger.error(f"Interface creation error: {error_message}")
+        self.is_active = False
+        self.interface_error.emit(error_message)    # Emit InterfaceManager's signal
+
+    async def cleanup_interface(self) -> bool:
+        try:
+            success = await self.interface_manager.cleanup_interface()
+            if success:
+                self.is_active = False
+            return success
+        except Exception as e:
+            self.logger.error(f"Failed to cleanup interface: {e}")
+            return False
