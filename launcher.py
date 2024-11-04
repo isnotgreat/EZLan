@@ -2,8 +2,8 @@ import sys
 import os
 import ctypes
 import subprocess
-import time
 from pathlib import Path
+from PyQt6.QtWidgets import QMessageBox, QApplication
 
 def is_admin():
     try:
@@ -17,12 +17,11 @@ def main():
         main_script = script_dir / "ezlan" / "main.py"
         
         if not main_script.exists():
-            print(f"Error: Could not find main.py at: {main_script}")
-            input("Press Enter to exit...")
+            app = QApplication([])
+            QMessageBox.critical(None, "Error", f"Error: Could not find main.py at: {main_script}")
             return
 
         if not is_admin():
-            print("Requesting administrator privileges...")
             try:
                 # Re-run with admin rights
                 ctypes.windll.shell32.ShellExecuteW(
@@ -34,27 +33,22 @@ def main():
                     1
                 )
             except Exception as e:
-                print(f"Failed to get admin rights: {e}")
-                input("Press Enter to exit...")
+                app = QApplication([])
+                QMessageBox.critical(None, "Error", f"Failed to get admin rights: {e}")
         else:
-            print("Running EZLan with administrator privileges...")
             try:
                 # We're already admin, run main.py directly
-                result = subprocess.run(
+                subprocess.run(
                     [sys.executable, str(main_script)],
-                    capture_output=True,
-                    text=True
+                    creationflags=subprocess.CREATE_NO_WINDOW
                 )
-                if result.returncode != 0:
-                    print(f"Error running EZLan:\n{result.stderr}")
-                    input("Press Enter to exit...")
             except Exception as e:
-                print(f"Error running EZLan: {e}")
-                input("Press Enter to exit...")
+                app = QApplication([])
+                QMessageBox.critical(None, "Error", f"Error running EZLan: {e}")
 
     except Exception as e:
-        print(f"Launcher error: {e}")
-        input("Press Enter to exit...")
+        app = QApplication([])
+        QMessageBox.critical(None, "Error", f"Launcher error: {e}")
 
 if __name__ == "__main__":
     main() 

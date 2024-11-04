@@ -3,6 +3,7 @@ import ctypes
 import traceback
 import asyncio
 import qasync
+import os
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from ezlan.gui.main_window import MainWindow
 from ezlan.network.discovery import DiscoveryService
@@ -35,7 +36,6 @@ def elevate():
         return True
     except Exception as e:
         print(f"Failed to get admin rights: {e}")
-        input("Press Enter to exit...")
         return False
 
 class Application:
@@ -56,11 +56,30 @@ class Application:
     async def cleanup(self):
         """Clean up resources before quitting"""
         try:
-            self.discovery_service.stop_discovery()
+            # Stop all services in order
+            if hasattr(self.discovery_service, '_running'):
+                self.discovery_service.stop_discovery()
+            
+            # Stop all monitoring threads
+            if hasattr(self.main_window, 'connection_monitor'):
+                if hasattr(self.main_window.connection_monitor, 'stop'):
+                    self.main_window.connection_monitor.stop()
+            
+            # Cleanup interface last
             if hasattr(self, 'interface_manager'):
-                await self.interface_manager.cleanup_interface()
+                try:
+                    await self.interface_manager.cleanup_interface()
+                except Exception as e:
+                    self.logger.error(f"Interface cleanup error: {e}")
+                    
         except Exception as e:
             self.logger.error(f"Cleanup error: {e}")
+        finally:
+            try:
+                if asyncio.get_running_loop():
+                    await asyncio.sleep(0.5)
+            except RuntimeError:
+                pass
 
     async def run(self):
         try:
@@ -91,21 +110,37 @@ class Application:
             return 1
 
 def main():
-    if not is_admin():
-        if elevate():
-            sys.exit(0)
-        else:
+    try:
+        if not is_admin():
+            if elevate():
+                return
             sys.exit(1)
-    
-    app = Application()
-    with app.loop:
+        
+        app = Application()
+        loop = app.loop
+        
         try:
-            app.loop.run_until_complete(app.run())
-            app.loop.run_forever()  # Add this line
+            exit_code = loop.run_until_complete(app.run())
+            if exit_code == 0:
+                loop.run_forever()
         except Exception as e:
-            app.logger.error(f"Application failed: {e}")
+            if hasattr(app, 'logger'):
+                app.logger.error(f"Application failed: {e}")
             traceback.print_exc()
-            sys.exit(1)
+            return 1
+        finally:
+            try:
+                loop.run_until_complete(app.cleanup())
+            except Exception as e:
+                print(f"Final cleanup error: {e}")
+            loop.close()
+            
+    except SystemExit:
+        raise
+    except Exception as e:
+        QMessageBox.critical(None, "Error", f"Startup error: {str(e)}")
+        return 1
+    return 0
 
 if __name__ == "__main__":
     main()

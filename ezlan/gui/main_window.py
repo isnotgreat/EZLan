@@ -1,7 +1,8 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, 
                            QPushButton, QLineEdit, QLabel, QHBoxLayout,
-                           QSplitter, QMessageBox)
-from PyQt6.QtCore import Qt, pyqtSlot, QEvent, QTimer
+                           QSplitter, QMessageBox, QApplication, QToolTip)
+from PyQt6.QtCore import Qt, pyqtSlot, QEvent, QTimer, pyqtSignal
+from PyQt6.QtGui import QCursor, QMouseEvent
 import qasync
 from .components.user_list import UserList
 from .components.connection_dialog import ConnectionDialog
@@ -16,6 +17,27 @@ from ezlan.utils.logger import Logger
 from .components.host_dialog import HostDialog  # Add this import
 from .components.host_status_panel import HostStatusPanel
 import asyncio
+
+class ClickableLabel(QLabel):
+    clicked = pyqtSignal()
+    
+    def __init__(self, text):
+        super().__init__(text)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet("""
+            QLabel {
+                color: blue;
+                text-decoration: underline;
+                padding: 5px;
+            }
+            QLabel:hover {
+                color: darkblue;
+            }
+        """)
+        
+    def mousePressEvent(self, event: QMouseEvent):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
 
 class MainWindow(QMainWindow):
     def __init__(self, discovery_service: DiscoveryService, tunnel_service: TunnelService):
@@ -148,11 +170,28 @@ class MainWindow(QMainWindow):
         self.host_status.update_host_info(host_info)
         self.host_btn.setEnabled(False)
         self.host_status.stop_btn.setEnabled(True)
-        QMessageBox.information(
-            self,
-            "Hosting Started",
-            f"Network is now hosted at:\nIP: {public_ip}\nPort: {tunnel_port}"
-        )
+        
+        # Create clickable message box with IP and port
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Hosting Started")
+        msg.setText("Network is now hosted at:")
+        
+        # Create layout for IP and port
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # Add clickable IP label
+        ip_label = ClickableLabel(f"IP: {public_ip}")
+        ip_label.clicked.connect(lambda: self._copy_to_clipboard(public_ip))
+        layout.addWidget(ip_label)
+        
+        # Add clickable port label
+        port_label = ClickableLabel(f"Port: {tunnel_port}")
+        port_label.clicked.connect(lambda: self._copy_to_clipboard(str(tunnel_port)))
+        layout.addWidget(port_label)
+        
+        msg.layout().addWidget(widget, 1, 1)  # Add to message box layout
+        msg.exec()
 
     @pyqtSlot(str)
     def _handle_host_failed(self, error_message):
@@ -282,8 +321,8 @@ class MainWindow(QMainWindow):
             dialog = HostDialog(self)
             if dialog.exec():
                 host_info = dialog.get_host_info()
-                # Use qasync's asyncSlot directly
-                asyncio.create_task(self._handle_host_start(host_info))
+                # Use qasync's asyncSlot directly instead of creating a new task
+                self._handle_host_start(host_info)
         except Exception as e:
             self.logger.error(f"Failed to show host dialog: {e}")
             QMessageBox.critical(
@@ -296,9 +335,7 @@ class MainWindow(QMainWindow):
     async def _handle_host_start(self, host_info):
         """Handle the start hosting request"""
         try:
-            # Start hosting and get the host info from tunnel service
             await self.tunnel_service.start_hosting(host_info)
-            # Don't show another message here since _handle_host_started will show it
         except Exception as e:
             self.logger.error(f"Failed to start hosting: {e}")
             QMessageBox.critical(
@@ -355,3 +392,8 @@ class MainWindow(QMainWindow):
             
         except Exception as e:
             self.logger.error(f"Error during cleanup: {e}")
+
+    def _copy_to_clipboard(self, text):
+        """Copy text to clipboard and show feedback"""
+        QApplication.clipboard().setText(text)
+        QToolTip.showText(QCursor.pos(), "Copied to clipboard!", self)

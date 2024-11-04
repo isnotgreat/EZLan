@@ -100,7 +100,7 @@ class TunnelService(QObject):
             # Clean up interface
             try:
                 if hasattr(self, 'interface_manager'):
-                    await self.interface_manager.cleanup()
+                    await self.interface_manager.cleanup_interface()
             except Exception as e:
                 self.logger.error(f"Error cleaning up interface: {e}")
                 

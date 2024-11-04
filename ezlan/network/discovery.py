@@ -90,18 +90,65 @@ class DiscoveryService(QObject):
             }
             message = json.dumps(presence_data).encode()
             
-            # Use a separate socket for broadcasting
+            # Create a new socket for each broadcast
             broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             
             try:
-                broadcast_socket.sendto(message, ('<broadcast>', self.broadcast_port))
+                # Get all network interfaces
+                successful_broadcasts = 0
+                for interface in netifaces.interfaces():
+                    addrs = netifaces.ifaddresses(interface)
+                    if netifaces.AF_INET in addrs:  # Only IPv4
+                        for addr in addrs[netifaces.AF_INET]:
+                            if 'addr' in addr and not addr['addr'].startswith('127.'):
+                                try:
+                                    # Bind to specific interface
+                                    broadcast_socket.bind((addr['addr'], 0))
+                                    # Send to broadcast address
+                                    if 'broadcast' in addr:
+                                        broadcast_socket.sendto(message, (addr['broadcast'], self.broadcast_port))
+                                        successful_broadcasts += 1
+                                except Exception as e:
+                                    # Only log actual errors, not routine failures
+                                    if "already bound" not in str(e):
+                                        self.logger.error(f"Failed to broadcast on interface {interface}: {e}")
+                                finally:
+                                    # Unbind for next interface
+                                    broadcast_socket.close()
+                                    broadcast_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                                    broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                                    broadcast_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                
+                # Only log once per successful broadcast cycle
+                if successful_broadcasts > 0 and not hasattr(self, '_last_broadcast_count'):
+                    self.logger.info(f"Broadcasting presence on {successful_broadcasts} interfaces")
+                    self._last_broadcast_count = successful_broadcasts
+                elif successful_broadcasts != getattr(self, '_last_broadcast_count', None):
+                    self.logger.info(f"Broadcasting presence on {successful_broadcasts} interfaces")
+                    self._last_broadcast_count = successful_broadcasts
+                
             finally:
                 broadcast_socket.close()
             
         except Exception as e:
             self.logger.error(f"Failed to broadcast presence: {e}")
+            
+    def _get_broadcast_addresses(self):
+        """Get list of broadcast addresses for all interfaces"""
+        broadcast_list = ['255.255.255.255']  # Default broadcast
+        try:
+            import netifaces
+            for interface in netifaces.interfaces():
+                addrs = netifaces.ifaddresses(interface)
+                if netifaces.AF_INET in addrs:
+                    for addr in addrs[netifaces.AF_INET]:
+                        if 'broadcast' in addr:
+                            broadcast_list.append(addr['broadcast'])
+        except Exception as e:
+            self.logger.debug(f"Failed to get broadcast addresses: {e}")
+        return list(set(broadcast_list))  # Remove duplicates
             
     def _start_listening(self):
         """Listen for peer broadcasts"""
